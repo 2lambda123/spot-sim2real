@@ -22,7 +22,8 @@ class OwlVit:
         )
 
         self.model = OwlViTForObjectDetection.from_pretrained(
-            "google/owlvit-base-patch32"
+            "google/owlvit-base-patch32",
+            torch_dtype=torch.bfloat16,
         )
         self.model.eval()
         self.model.to(self.device)
