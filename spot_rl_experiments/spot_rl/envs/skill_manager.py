@@ -68,9 +68,9 @@ class SpotSkillManager:
         spotskillmanager.place("test_place_front")
     """
 
-    def __init__(self):
+    def __init__(self, nav_config=None, pick_config=None, place_config=None):
         # Create the spot object, init lease, and construct configs
-        self.__init_spot()
+        self.__init_spot(nav_config, pick_config, place_config)
 
         # Initiate the controllers for nav, gaze, and place
         self.__initiate_controllers()
@@ -80,11 +80,12 @@ class SpotSkillManager:
 
         # Create a local waypoint dictionary
         self.waypoints_yaml_dict = get_waypoint_yaml()
+        self.verbose = True
 
     def __del__(self):
         pass
 
-    def __init_spot(self):
+    def __init_spot(self, nav_config=None, pick_config=None, place_config=None):
         """
         Initialize the Spot object, acquire lease, and construct configs
         """
@@ -100,9 +101,15 @@ class SpotSkillManager:
             exit(1)
 
         # Construct configs for nav, gaze, and place
-        self.nav_config = construct_config_for_nav()
-        self.pick_config = construct_config_for_gaze(max_episode_steps=350)
-        self.place_config = construct_config_for_place()
+        self.nav_config = construct_config_for_nav() if not nav_config else nav_config
+        self.pick_config = (
+            construct_config_for_gaze(max_episode_steps=350)
+            if not pick_config
+            else pick_config
+        )
+        self.place_config = (
+            construct_config_for_place() if not place_config else place_config
+        )
 
         # Set the verbose flag (from any of the configs)
         self.verbose = self.nav_config.VERBOSE

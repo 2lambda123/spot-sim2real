@@ -44,6 +44,7 @@ from bosdyn.client.frame_helpers import (
     GRAV_ALIGNED_BODY_FRAME_NAME,
     HAND_FRAME_NAME,
     VISION_FRAME_NAME,
+    get_a_tform_b,
     get_vision_tform_body,
 )
 from bosdyn.client.image import ImageClient, build_image_request
@@ -884,6 +885,21 @@ class Spot:
         rotation_matrix = mn.Quaternion(quat.imag, quat.real).to_matrix()
         translation = mn.Vector3(pos.x, pos.y, pos.z)
 
+        mn_transformation = mn.Matrix4.from_(rotation_matrix, translation)
+        return mn_transformation
+
+    def get_spot_a_T_b(self, a: str, b: str, tree=None) -> mn.Matrix4:
+        frame_tree_snapshot = (
+            self.get_robot_state().kinematic_state.transforms_snapshot
+            if tree is None
+            else tree
+        )
+        se3_pose = get_a_tform_b(frame_tree_snapshot, a, b)
+        pos = se3_pose.get_translation()
+        quat = se3_pose.rotation.normalize()
+        quat = quaternion.quaternion(quat.w, quat.x, quat.y, quat.z)
+        rotation_matrix = mn.Quaternion(quat.imag, quat.real).to_matrix()
+        translation = mn.Vector3(*pos)
         mn_transformation = mn.Matrix4.from_(rotation_matrix, translation)
         return mn_transformation
 

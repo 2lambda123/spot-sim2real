@@ -8,7 +8,10 @@ import sys
 import time
 from typing import Dict, List
 
+import cv2
 import numpy as np
+from bosdyn.client.frame_helpers import get_a_tform_b
+from bosdyn.client.math_helpers import quat_to_eulerZYX
 from spot_rl.envs.base_env import SpotBaseEnv
 from spot_rl.real_policy import NavPolicy
 from spot_rl.utils.json_helpers import save_json_file
@@ -18,7 +21,7 @@ from spot_rl.utils.utils import (
     get_waypoint_yaml,
     nav_target_from_waypoint,
 )
-from spot_wrapper.spot import Spot
+from spot_wrapper.spot import Spot, wrap_heading
 
 
 def parse_arguments(args=sys.argv[1:]):
@@ -188,10 +191,28 @@ class SpotNavEnv(SpotBaseEnv):
     def __init__(self, config, spot: Spot):
         super().__init__(config, spot)
         self._goal_xy = None
-        self._enable_nav_goal_change = config.ENABLE_NAV_GOAL_CHANGE
+        self._enable_nav_goal_change = False
+        self.backup_get_observation_by_base_fn = self.get_nav_observation
         self.goal_heading = None
         self.succ_distance = config.SUCCESS_DISTANCE
         self.succ_angle = np.deg2rad(config.SUCCESS_ANGLE_DIST)
+
+    def enable_nav_goal_change(self):
+        if not self._enable_nav_goal_change:
+            self._enable_nav_goal_change = True
+            print(
+                f"{self.node_name} Enabling nav goal change get_nav_observation by base switched to get_nav_observation by hand fn"
+            )
+            self.backup_get_observation_by_base_fn = self.get_nav_observation
+            self.get_nav_observation = self.get_nav_observation_by_hand
+
+    def disable_nav_goal_change(self):
+        if self._enable_nav_goal_change:
+            self.get_nav_observation = self.backup_get_observation_by_base_fn
+            self._enable_nav_goal_change = False
+            print(
+                f"{self.node_name} Disabling nav goal change get_nav_observation by base fn restored"
+            )
 
     def reset(self, goal_xy, goal_heading):
         self._goal_xy = np.array(goal_xy, dtype=np.float32)
@@ -207,20 +228,53 @@ class SpotNavEnv(SpotBaseEnv):
             self.spot.set_base_velocity(0.0, 0.0, 0.0, 1 / self.ctrl_hz)
         return succ
 
-    def get_observations(self):
-        # Update the point goal given depth and rgb images
-        if self._enable_nav_goal_change:
-            arm_depth, arm_depth_bbox = self.get_gripper_images()
-            # Update the object x, y here
-            obj_xy = self.spot.get_new_goal_given_obj_img(arm_depth, arm_depth_bbox)
-            # Update the obj_xy to consider the base offset
-            obj_nav_offset_x = -1.5
-            goal_x, goal_y, _ = self.spot.get_global_from_local_based_on_input_T(
-                obj_nav_offset_x, 0, 0, obj_xy[0], obj_xy[1], 0
+    def get_hand_xy_theta(self, use_boot_origin=False):
+        vision_T_hand = get_a_tform_b(
+            self.spot.robot_state_client.get_robot_state().kinematic_state.transforms_snapshot,
+            "vision",
+            "hand",
+        )
+        theta = quat_to_eulerZYX(vision_T_hand.rotation)[0]
+        point_in_global_2d = np.array([vision_T_hand.x, vision_T_hand.y])
+        return (
+            (point_in_global_2d[0], point_in_global_2d[1], theta)
+            if use_boot_origin
+            else self.spot.xy_yaw_global_to_home(
+                point_in_global_2d[0], point_in_global_2d[1], theta
             )
-            # Make it to be an array
-            self._goal_xy = np.array([goal_x, goal_y])
+        )
 
+    def get_nav_observation_by_hand(self, goal_xy, goal_heading):
+        observations = {}
+
+        # Get visual observations
+        front_depth = self.msg_to_cv2(self.filtered_head_depth, "mono8")
+
+        front_depth = cv2.resize(
+            front_depth, (120 * 2, 212), interpolation=cv2.INTER_AREA
+        )
+        front_depth = np.float32(front_depth) / 255.0
+        # Add dimension for channel (unsqueeze)
+        front_depth = front_depth.reshape(*front_depth.shape[:2], 1)
+        observations["spot_right_depth"], observations["spot_left_depth"] = np.split(
+            front_depth, 2, 1
+        )
+
+        # Get rho theta observation
+        x, y, yaw = self.get_hand_xy_theta()
+        curr_xy = np.array([x, y], dtype=np.float32)
+        rho = np.linalg.norm(curr_xy - goal_xy)
+        theta = wrap_heading(np.arctan2(goal_xy[1] - y, goal_xy[0] - x) - yaw)
+        rho_theta = np.array([rho, theta], dtype=np.float32)
+
+        # Get goal heading observation
+        goal_heading_ = -np.array([wrap_heading(goal_heading - yaw)], dtype=np.float32)
+        observations["target_point_goal_gps_and_compass_sensor"] = rho_theta
+        observations["goal_heading"] = goal_heading_
+
+        return observations
+
+    def get_observations(self):
         return self.get_nav_observation(self._goal_xy, self.goal_heading)
 
 
