@@ -30,8 +30,8 @@ if __name__ == "__main__":
     # x, y, theta = [float(s) for s in goal_str]
     # 4.069178561212342, -3.8163447712013268, -1.9480954162660047
     x, y, theta = (
-        4.139635746586972,
-        -3.7002378275234764,
+        3.97,
+        -3.65,
         -1.1429722791562886,
     )  # , np.deg2rad(-96.2389683367895)
     print(f"Original Nav Goal {x, y, np.degrees(theta)}")
@@ -40,10 +40,11 @@ if __name__ == "__main__":
     nav_config = construct_config_for_nav()
     # nav_config.SUCCESS_DISTANCE = 0.20
     # nav_config.SUCCESS_ANGLE_DIST = 3
-    # nav_config.MAX_EPISODE_STEPS = 50
+    nav_config.MAX_EPISODE_STEPS = 50
     spotskillmanager = SpotSkillManager(nav_config)
+    object_target = "ball"
     print(
-        f"Spot was able to reach the goal ? {navigate_to_aria_goal(x, y, theta, spotskillmanager, pull_back=False)}"
+        f"Spot was able to reach the goal ? {navigate_to_aria_goal(x, y, theta, spotskillmanager, object_target=object_target, pull_back=False)}"
     )
     # spotskillmanager.pick("ball")
     should_dock = map_user_input_to_boolean("Do you want to dock & exit ?")

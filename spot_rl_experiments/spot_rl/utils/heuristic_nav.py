@@ -182,7 +182,7 @@ def push_forward_point_along_theta_by_offset(
     return (x, y)
 
 
-def get_me_arguments_for_image_search_fn(spot: Spot):
+def get_me_arguments_for_image_search_fn(spot: Spot, angle):
     imgs = spot.get_hand_image()
     rgb_img = image_response_to_cv2(imgs[0])
     unscaled_dep_img = image_response_to_cv2(imgs[1])
@@ -204,6 +204,7 @@ def get_me_arguments_for_image_search_fn(spot: Spot):
         body_T_hand,
         intrinsics,
         spot,
+        angle,
     )
 
 
@@ -220,8 +221,12 @@ class ImageSearch:
 
         # if self.owlvit:
         self.deblur_gan = get_deblurgan_model(config)
-        self.yolov8predictor = (
-            YOLOV8Predictor("weights/yolov8x.torchscript") if use_yolov8 else None
+        self.yolov8predictor: YOLOV8Predictor = (
+            YOLOV8Predictor(
+                "/home/tusharsangam/Desktop/spot-sim2real/spot_rl_experiments/weights/yolov8x.torchscript"
+            )
+            if use_yolov8
+            else None
         )
         self.normal_object_to_coco_class_id = {"ball": 32.0}
 
@@ -245,15 +250,17 @@ class ImageSearch:
 
         return img
 
-    def object_detection(self, rgb_img, object_target):
+    def object_detection(self, rgb_img, object_target, angle):
         if self.yolov8predictor:
             detections, _ = self.yolov8predictor(
                 self.preprocess_image(rgb_img, 1.0), False
             )
+            # cv2.imwrite(f"detection_{angle}.png", _)
             assert (
                 object_target in self.normal_object_to_coco_class_id
             ), f"{object_target} not mapped in self.normal_to_coco_class_id for yolov8 detector"
             coco_class_id = self.normal_object_to_coco_class_id[object_target]
+            print(detections)
             detections = np.array(
                 [d for d in detections if d[-1] == coco_class_id]
             )  # check if detected object is sports ball
@@ -305,11 +312,12 @@ class ImageSearch:
         body_T_hand: mn.Matrix4,
         cam_intrinsics,
         spot: Spot,
+        angle: float = 0.0,
     ):
 
         rgb_img_vis = rgb_img.copy() if self.visualize else None
 
-        det_status, det = self.object_detection(rgb_img, object_target)
+        det_status, det = self.object_detection(rgb_img, object_target, angle)
         if not det_status:
             return False, (None, None, None), rgb_img_vis
         x1, y1, x2, y2, conf = det
@@ -388,7 +396,7 @@ def navigate_to_aria_goal(
     print(f"Original Nav targets {x, y, theta}")
     if image_search is None:
         image_search = ImageSearch(
-            corner_static_offset=0.5, use_yolov8=False, visualize=True
+            corner_static_offset=0.5, use_yolov8=True, visualize=True
         )
     spotskillmanager.nav_controller.nav_env.enable_nav_goal_change()
     x, y = (
@@ -403,40 +411,39 @@ def navigate_to_aria_goal(
     spot.set_arm_joint_positions(np.deg2rad(gaze_arm_angles))
     time.sleep(1.0)
     found, (x, y, theta), visulize_img = image_search.search(
-        object_target, *get_me_arguments_for_image_search_fn(spot)
+        object_target, *get_me_arguments_for_image_search_fn(spot, 0)
     )
+    rate = 20
     if not found:
         # start semi circle search
-        rate = 10
         for i_a, angle in enumerate(np.arange(-90, 110, 20)):
             print(f"Searching in {angle} cone")
             angle_time = int(np.abs(gaze_arm_angles[0] - angle) / rate)
             gaze_arm_angles[0] = angle
             spot.set_arm_joint_positions(np.deg2rad(gaze_arm_angles), angle_time)
-            found, (x, y, theta), visulize_img = image_search.search(
-                object_target, *get_me_arguments_for_image_search_fn(spot)
+            time.sleep(1)
+            found, (x, y, theta), visulize_img = image_search.search(  # type : ignore
+                object_target, *get_me_arguments_for_image_search_fn(spot, angle)
             )
             if save_cone_search_images:
                 cv2.imwrite(f"imagesearch_{angle}.png", visulize_img)
             if found:
                 print(f"In Cone Search object found at {(x,y,theta)}")
-                angle_time = int(
-                    np.abs(
-                        gaze_arm_angles[0]
-                        - spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES[0]
-                    )
-                    / rate
-                )
-                spot.set_arm_joint_positions(
-                    np.deg2rad(spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES),
-                    angle_time,
-                )
                 break
-            time.sleep(1.0)
+
     else:
         if save_cone_search_images:
             cv2.imwrite("imagesearch_looking_forward.png", visulize_img)
-
+    angle_time = int(
+        np.abs(
+            gaze_arm_angles[0] - spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES[0]
+        )
+        / rate
+    )
+    spot.set_arm_joint_positions(
+        np.deg2rad(spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES),
+        angle_time,
+    )
     if found:
         print(f"Nav goal after cone search {x, y, np.degrees(theta)}")
         spotskillmanager.nav(x, y, theta)
