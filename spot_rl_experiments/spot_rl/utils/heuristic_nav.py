@@ -1,5 +1,7 @@
+import os
 import time
 from copy import deepcopy
+from glob import glob
 
 import cv2
 import magnum
@@ -394,22 +396,29 @@ def navigate_to_aria_goal(
     pull_back: bool = True,
 ):
     print(f"Original Nav targets {x, y, theta}")
+    if save_cone_search_images:
+        previously_saved_images = glob("imagesearch*.png")
+        for f in previously_saved_images:
+            os.remove(f)
+
     if image_search is None:
         image_search = ImageSearch(
-            corner_static_offset=0.5, use_yolov8=True, visualize=True
+            corner_static_offset=0.5, use_yolov8=False, visualize=True
         )
     spotskillmanager.nav_controller.nav_env.enable_nav_goal_change()
-    x, y = (
-        pull_back_point_along_theta_by_offset(x, y, theta, 0.5) if pull_back else x,
-        y,
+    (x, y) = (
+        pull_back_point_along_theta_by_offset(x, y, theta, 0.2) if pull_back else (x, y)
     )
-    # print(f"Nav targets adjusted on the theta direction ray {x, y, np.degrees(theta)}")
+    print(f"Nav targets adjusted on the theta direction ray {x, y, np.degrees(theta)}")
+    backup_steps = spotskillmanager.nav_controller.nav_env.max_episode_steps
+    spotskillmanager.nav_controller.nav_env.max_episode_steps = 50
     spotskillmanager.nav(x, y, theta)
+    spotskillmanager.nav_controller.nav_env.max_episode_steps = backup_steps
     spot: Spot = spotskillmanager.spot
     spot.open_gripper()
     gaze_arm_angles = deepcopy(spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES)
-    spot.set_arm_joint_positions(np.deg2rad(gaze_arm_angles))
-    time.sleep(1.0)
+    spot.set_arm_joint_positions(np.deg2rad(gaze_arm_angles), 1)
+    time.sleep(1.2)
     found, (x, y, theta), visulize_img = image_search.search(
         object_target, *get_me_arguments_for_image_search_fn(spot, 0)
     )
@@ -421,7 +430,7 @@ def navigate_to_aria_goal(
             angle_time = int(np.abs(gaze_arm_angles[0] - angle) / rate)
             gaze_arm_angles[0] = angle
             spot.set_arm_joint_positions(np.deg2rad(gaze_arm_angles), angle_time)
-            time.sleep(1)
+            time.sleep(1.2)
             found, (x, y, theta), visulize_img = image_search.search(  # type : ignore
                 object_target, *get_me_arguments_for_image_search_fn(spot, angle)
             )
@@ -446,7 +455,9 @@ def navigate_to_aria_goal(
     )
     if found:
         print(f"Nav goal after cone search {x, y, np.degrees(theta)}")
+        spotskillmanager.nav_controller.nav_env.max_episode_steps = 50
         spotskillmanager.nav(x, y, theta)
+        spotskillmanager.nav_controller.nav_env.max_episode_steps = backup_steps
     spotskillmanager.nav_controller.nav_env.disable_nav_goal_change()
     return found
 
