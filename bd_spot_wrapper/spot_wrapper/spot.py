@@ -799,14 +799,18 @@ class Spot:
             self.power_off()
 
     def get_hand_image(self, is_rgb=True):
-        img_src = [SpotCamIds.HAND_COLOR]
+        img_src = [SpotCamIds.HAND_COLOR, SpotCamIds.HAND_DEPTH_IN_HAND_COLOR_FRAME]
 
-        pixel_format = image_pb2.Image.PIXEL_FORMAT_RGB_U8
-        if not is_rgb:
-            pixel_format = image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U8
-
-        img_resp = self.get_image_responses(img_src, pixel_format=pixel_format)
-        return img_resp[0]
+        pixel_format_rgb = (
+            image_pb2.Image.PIXEL_FORMAT_RGB_U8
+            if is_rgb
+            else image_pb2.Image.PIXEL_FORMAT_GREYSCALE_U8
+        )
+        pixel_format_depth = image_pb2.Image.PIXEL_FORMAT_DEPTH_U16
+        img_resp = self.get_image_responses(
+            img_src, pixel_format=[pixel_format_rgb, pixel_format_depth]
+        )
+        return img_resp
 
     def get_camera_intrinsics(self, source, quality=None, pixel_format=None):
         """Retrieve images from Spot's cameras
