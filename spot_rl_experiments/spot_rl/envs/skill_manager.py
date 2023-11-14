@@ -14,6 +14,7 @@ from spot_rl.utils.geometry_utils import (
     is_pose_within_bounds,
     is_position_within_bounds,
 )
+from spot_rl.utils.heuristic_nav import ImageSearch, navigate_to_aria_goal
 from spot_rl.utils.utils import (
     conditional_print,
     get_waypoint_yaml,
@@ -222,6 +223,48 @@ class SpotSkillManager:
             message = "Successfully reached the target pose by default"
         conditional_print(message=message, verbose=self.verbose)
         return status, message
+
+    def nav_mobile_hueristic(
+        self,
+        x: float,
+        y: float,
+        theta: float,
+        object_target: str,
+        image_search: ImageSearch = None,
+        save_cone_search_images: bool = True,
+        pull_back: bool = True,
+    ) -> bool:
+        """
+        Perform Heuristic mobile navigation to the not very accurate pick target obtained from Aria glasses(x,y,theta)
+        Step 1 goto x,y,theta with head first navigation method
+        Step 2 search object_target using object detector in the list of -90 to 90 degrees (180 degrees) with 20 degrees interval
+        Step 3 If found update given x, y, theta with new
+        Step 4 Navigate to new x, y, theta in 50 steps
+        Step 5 turn off head first navigation
+        Step 6 Return Flag: bool signifying whether we found the object_target & whether is ready to pick ?
+
+        Args:
+            x (float): x coordinate of the nav target (in meters) specified in the world frame
+            y (float): y coordinate of the nav target (in meters) specified in the world frame
+            theta (float): yaw for the nav target (in radians) specified in the world frame
+            object_target: str object to search
+            image_search : spot_rl.utils.heuristic_nav.ImageSearch, Optional, default=None, ImageSearch (object detector wrapper), if none creates a new one for you uses OwlVit
+            save_cone_search_images: bool, optional, default= True, saves image with detections in each search cone
+            pull_back : bool, optional, default=True, pulls back x,y along theta direction
+        Returns:
+            bool: True if navigation was successful, False otherwise, if True you are good to fire .pick method
+
+        """
+        return navigate_to_aria_goal(
+            x,
+            y,
+            theta,
+            self,
+            object_target,
+            image_search,
+            save_cone_search_images,
+            pull_back,
+        )
 
     def pick(self, pick_target: str = None) -> Tuple[bool, str]:
         """

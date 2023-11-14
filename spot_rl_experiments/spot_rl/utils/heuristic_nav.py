@@ -9,7 +9,8 @@ import magnum as mn
 import numpy as np
 import rospy
 from scipy import stats as st
-from spot_rl.envs.skill_manager import SpotSkillManager
+
+# from spot_rl.envs.skill_manager import SpotSkillManager
 from spot_rl.models import OwlVit
 from spot_rl.models.yolov8predictor import YOLOV8Predictor
 from spot_rl.utils.mask_rcnn_utils import get_deblurgan_model
@@ -159,15 +160,6 @@ def convert_point_from_local_to_global_nav_target(
         f"transformed theta {np.degrees(transformed_theta)}, new theta {np.degrees(theta)}"
     )
     return (global_x, global_y), theta
-
-
-def euclidean(x1, y1, x2, y2):
-    return np.sqrt(np.square([x2 - x1, y2 - y1]).sum())
-
-
-def wrap_heading(heading):
-    """Ensures input heading is between -180 an 180; can be float or np.ndarray"""
-    return (heading + np.pi) % (2 * np.pi) - np.pi
 
 
 def pull_back_point_along_theta_by_offset(
@@ -389,7 +381,7 @@ def navigate_to_aria_goal(
     x: float,
     y: float,
     theta: float,
-    spotskillmanager: SpotSkillManager,
+    spotskillmanager,
     object_target: str = "ball",
     image_search: ImageSearch = None,
     save_cone_search_images: bool = True,
