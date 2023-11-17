@@ -33,6 +33,9 @@ def get_3d_point(cam_intrinsics, pixel_uv, z):
 
 
 def get_3d_points(cam_intrinsics, pixels_uv: np.ndarray, zs: np.ndarray):
+    """
+    Vectorized version of the above method, pass n, 2D points & get n 3D points
+    """
     # pixels_uv = nx2 xs -> :, 1
     # Get camera intrinsics
     fx = cam_intrinsics.focal_length.x
@@ -46,6 +49,9 @@ def get_3d_points(cam_intrinsics, pixels_uv: np.ndarray, zs: np.ndarray):
 
 
 def get_best_uvz_from_detection(unscaled_dep_img, detection):
+    """
+    Sample best z depth for the given bounding box
+    """
     center_x, center_y = (detection[0] + detection[2]) / 2, (
         detection[1] + detection[3]
     ) / 2
@@ -66,6 +72,9 @@ def get_best_uvz_from_detection(unscaled_dep_img, detection):
 def get_z_offset_by_corner_detection(
     rgb_depth_mixed_image, unscaled_dep_img, ball_detection, z
 ):
+    """
+    Apply Harris Corner Detection on rgb X depth image, then filter corners such that we select one ahead of our bounding box
+    """
     # center_x = (ball_detection[0] + ball_detection[2])/2
     # center_y = (ball_detection[1] + ball_detection[3])/2
     # bottom_center_x, bottom_center_y = center_x, ball_detection[3]
@@ -165,6 +174,9 @@ def convert_point_from_local_to_global_nav_target(
 def pull_back_point_along_theta_by_offset(
     x: float, y: float, theta: float, offset: float = 0.5
 ):
+    """
+    Pulls back the x,y along theta direction for static offset in meters
+    """
     x, y = x - offset * np.cos(theta), y - offset * np.sin(theta)
     return (x, y)
 
@@ -177,6 +189,9 @@ def push_forward_point_along_theta_by_offset(
 
 
 def get_me_arguments_for_image_search_fn(spot: Spot, angle):
+    """
+    ImageSearch.search takes a lot of argumnents, this method prepares those
+    """
     imgs = spot.get_hand_image()
     rgb_img = image_response_to_cv2(imgs[0])
     unscaled_dep_img = image_response_to_cv2(imgs[1])
@@ -203,6 +218,15 @@ def get_me_arguments_for_image_search_fn(spot: Spot, angle):
 
 
 class ImageSearch:
+    """
+    Object Detection Wrapper + offset detection
+    Detects object in image using given image detector
+    Estimates 3D position of the 2D bounding box in local view
+    Estimates nearest corner point using harris corner detection & some geometric filtering (like points below the bounding box)
+    Adjust the 3D position found in step 2
+    Convert 3D position from hand's local view to x,y, theta global nav target
+    """
+
     def __init__(
         self, corner_static_offset: float = 0.5, use_yolov8=True, visualize=True
     ):
@@ -375,83 +399,6 @@ class ImageSearch:
             return True, (global_x, global_y, theta), rgb_img_vis
 
         return False, (None, None, None), rgb_img_vis
-
-
-def navigate_to_aria_goal(
-    x: float,
-    y: float,
-    theta: float,
-    spotskillmanager,
-    object_target: str = "ball",
-    image_search: ImageSearch = None,
-    save_cone_search_images: bool = True,
-    pull_back: bool = True,
-):
-    print(f"Original Nav targets {x, y, theta}")
-    if save_cone_search_images:
-        previously_saved_images = glob("imagesearch*.png")
-        for f in previously_saved_images:
-            os.remove(f)
-
-    if image_search is None:
-        image_search = ImageSearch(
-            corner_static_offset=0.5, use_yolov8=False, visualize=True
-        )
-    spotskillmanager.nav_controller.nav_env.enable_nav_goal_change()
-    (x, y) = (
-        pull_back_point_along_theta_by_offset(x, y, theta, 0.2) if pull_back else (x, y)
-    )
-    print(f"Nav targets adjusted on the theta direction ray {x, y, np.degrees(theta)}")
-    backup_steps = spotskillmanager.nav_controller.nav_env.max_episode_steps
-    spotskillmanager.nav_controller.nav_env.max_episode_steps = 50
-    spotskillmanager.nav(x, y, theta)
-    spotskillmanager.nav_controller.nav_env.max_episode_steps = backup_steps
-    spot: Spot = spotskillmanager.spot
-    spot.open_gripper()
-    gaze_arm_angles = deepcopy(spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES)
-    spot.set_arm_joint_positions(np.deg2rad(gaze_arm_angles), 1)
-    time.sleep(1.2)
-    found, (x, y, theta), visulize_img = image_search.search(
-        object_target, *get_me_arguments_for_image_search_fn(spot, 0)
-    )
-    rate = 20
-    if not found:
-        # start semi circle search
-        for i_a, angle in enumerate(np.arange(-90, 110, 20)):
-            print(f"Searching in {angle} cone")
-            angle_time = int(np.abs(gaze_arm_angles[0] - angle) / rate)
-            gaze_arm_angles[0] = angle
-            spot.set_arm_joint_positions(np.deg2rad(gaze_arm_angles), angle_time)
-            time.sleep(1.2)
-            found, (x, y, theta), visulize_img = image_search.search(  # type : ignore
-                object_target, *get_me_arguments_for_image_search_fn(spot, angle)
-            )
-            if save_cone_search_images:
-                cv2.imwrite(f"imagesearch_{angle}.png", visulize_img)
-            if found:
-                print(f"In Cone Search object found at {(x,y,theta)}")
-                break
-
-    else:
-        if save_cone_search_images:
-            cv2.imwrite("imagesearch_looking_forward.png", visulize_img)
-    angle_time = int(
-        np.abs(
-            gaze_arm_angles[0] - spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES[0]
-        )
-        / rate
-    )
-    spot.set_arm_joint_positions(
-        np.deg2rad(spotskillmanager.pick_config.GAZE_ARM_JOINT_ANGLES),
-        angle_time,
-    )
-    if found:
-        print(f"Nav goal after cone search {x, y, np.degrees(theta)}")
-        spotskillmanager.nav_controller.nav_env.max_episode_steps = 50
-        spotskillmanager.nav(x, y, theta)
-        spotskillmanager.nav_controller.nav_env.max_episode_steps = backup_steps
-    spotskillmanager.nav_controller.nav_env.disable_nav_goal_change()
-    return found
 
 
 if __name__ == "__main__":

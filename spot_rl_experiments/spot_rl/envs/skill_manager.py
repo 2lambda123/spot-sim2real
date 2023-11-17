@@ -296,10 +296,12 @@ class SpotSkillManager:
         found, (x, y, theta), visulize_img = image_search.search(
             object_target, *get_me_arguments_for_image_search_fn(spot, 0)
         )
-        rate = 20
+        rate = 20  # control time taken to rotate the arm, higher the rotation higher is the time
         if not found:
             # start semi circle search
-            for i_a, angle in enumerate(np.arange(-90, 110, 20)):
+            angle_interval = 20
+            semicircle_range = np.arange(-90, 110, angle_interval)
+            for i_a, angle in enumerate(semicircle_range):
                 print(f"Searching in {angle} cone")
                 angle_time = int(np.abs(gaze_arm_angles[0] - angle) / rate)
                 gaze_arm_angles[0] = angle

@@ -621,15 +621,6 @@ class Spot:
             return arm_joint_positions
         return arm_joint_positions.tolist()
 
-    def get_new_goal_given_obj_img(self, depth, bbox):
-        """Estimate the goal location based on the depth and bbox of the target object
-        :param as_array
-        :return the x, y location in the world frame
-        """
-        x = 0
-        y = 0
-        return np.array([x, y])
-
     def set_arm_joint_positions(
         self, positions, travel_time=1.0, max_vel=2.5, max_acc=15, return_cmd=False
     ):
@@ -799,6 +790,9 @@ class Spot:
             self.power_off()
 
     def get_hand_image(self, is_rgb=True):
+        """
+        Gets hand raw rgb & depth, returns List[rgbimage, unscaleddepthimage] image object is BD source image object which has kinematic snapshot & camera intrinsics along with pixel data
+        """
         img_src = [SpotCamIds.HAND_COLOR, SpotCamIds.HAND_DEPTH_IN_HAND_COLOR_FRAME]
 
         pixel_format_rgb = (
@@ -893,12 +887,20 @@ class Spot:
         return mn_transformation
 
     def get_spot_a_T_b(self, a: str, b: str, tree=None) -> mn.Matrix4:
+        """
+        Gets transformation from 'a' frame to 'b' frame such that a_T_b
+        a & b takes string values of the name of the frames
+        tree is optional, its the kinematic transforms tree if none it will make new from robot's state
+        image sources also give us kinematic transforms trees that can be sent here
+        """
         frame_tree_snapshot = (
             self.get_robot_state().kinematic_state.transforms_snapshot
             if tree is None
             else tree
         )
+        # BD api's function get_a_tform_b uses given transforms tree to make a_T_b
         se3_pose = get_a_tform_b(frame_tree_snapshot, a, b)
+        # convert SE3Pose to magnum Matrix 4 transformation, seperate rotation & translation
         pos = se3_pose.get_translation()
         quat = se3_pose.rotation.normalize()
         quat = quaternion.quaternion(quat.w, quat.x, quat.y, quat.z)
