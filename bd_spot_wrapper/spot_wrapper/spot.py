@@ -24,6 +24,7 @@ import cv2
 import magnum as mn
 import numpy as np
 import quaternion
+import rospy
 import sophus as sp
 from bosdyn import geometry
 from bosdyn.api import (
@@ -36,7 +37,7 @@ from bosdyn.api import (
     synchronized_command_pb2,
     trajectory_pb2,
 )
-from bosdyn.api.geometry_pb2 import SE2Velocity, SE2VelocityLimit, Vec2
+from bosdyn.api.geometry_pb2 import SE2Velocity, SE2VelocityLimit, SE3Pose, Vec2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client import math_helpers
 from bosdyn.client.docking import blocking_dock_robot, blocking_undock
@@ -57,7 +58,14 @@ from bosdyn.client.robot_command import (
 )
 from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.util import seconds_to_duration
+
+############################################################################
+# Move to transform_utils.py
+from geometry_msgs.msg import PoseStamped, TransformStamped
 from google.protobuf import wrappers_pb2
+from scipy.spatial.transform import Rotation as R
+
+############################################################################
 
 # Get Spot password and IP address
 env_err_msg = (
@@ -123,6 +131,110 @@ SHOULD_ROTATE = [
     SpotCamIds.HAND_DEPTH,
     SpotCamIds.HAND,
 ]
+
+
+# Move to transform_utils.py
+def generate_TransformStamped_a_T_b_from_SE3Pose(
+    a_Tform_b: SE3Pose, parent_frame: str, child_frame: str
+) -> TransformStamped:
+    """Generate the transform from spotWorld to spot frame
+
+    Returns:
+        Transform: Transform from spotWorld to spot
+    """
+    transform_a_T_b = TransformStamped()
+
+    transform_a_T_b.header.stamp = rospy.Time.now()
+    transform_a_T_b.header.frame_id = f"/{parent_frame}"
+    transform_a_T_b.child_frame_id = f"/{child_frame}"
+
+    trans = a_Tform_b.position
+    rospy.loginfo(f"TRANS : {trans}")
+    transform_a_T_b.transform.translation.x = float(trans.x)
+    transform_a_T_b.transform.translation.y = float(trans.y)
+    transform_a_T_b.transform.translation.z = float(trans.z)
+
+    quat = a_Tform_b.rotation
+    rospy.loginfo(f"Quat : {quat}")
+    transform_a_T_b.transform.rotation.x = float(quat.x)
+    transform_a_T_b.transform.rotation.y = float(quat.y)
+    transform_a_T_b.transform.rotation.z = float(quat.z)
+    transform_a_T_b.transform.rotation.w = float(quat.w)
+    return transform_a_T_b
+
+
+# Move to transform_utils.py
+def generate_TransformStamped_a_T_b_from_spSE3(
+    a_Tform_b: sp.SE3, parent_frame: str, child_frame: str
+) -> TransformStamped:
+    """Generate the transform from spotWorld to spot frame
+
+    Returns:
+        Transform: Transform from spotWorld to spot
+    """
+    transform_a_T_b = sp.SE3()
+
+    transform_a_T_b.header.stamp = rospy.Time.now()
+    transform_a_T_b.header.frame_id = f"/{parent_frame}"
+    transform_a_T_b.child_frame_id = f"/{child_frame}"
+
+    trans = a_Tform_b.translation()
+    transform_a_T_b.transform.translation.x = float(trans.x)  # Test this
+    transform_a_T_b.transform.translation.y = float(trans.y)  # Test this
+    transform_a_T_b.transform.translation.z = float(trans.z)  # Test this
+
+    quat = R.from_matrix(a_Tform_b.rotationMatrix()).as_quat()
+    transform_a_T_b.transform.rotation.x = float(quat.x)  # Test this
+    transform_a_T_b.transform.rotation.y = float(quat.y)  # Test this
+    transform_a_T_b.transform.rotation.z = float(quat.z)  # Test this
+    transform_a_T_b.transform.rotation.w = float(quat.w)  # Test this
+    return transform_a_T_b
+
+
+# Move to transform_utils.py
+def generate_spSE3_a_T_b_from_TransformStamped(a_Tform_b: TransformStamped) -> sp.SE3:
+    """Generate the transform from spotWorld to spot frame
+
+    Returns:
+        Transform: Transform from spotWorld to spot
+    """
+
+    trans = np.array([0.0, 0.0, 0.0])
+    trans[0] = a_Tform_b.transform.translation.x  # Test this
+    trans[1] = a_Tform_b.transform.translation.y  # Test this
+    trans[2] = a_Tform_b.transform.translation.z  # Test this
+
+    quat = np.array([0.0, 0.0, 0.0, 1.0])
+    quat[0] = a_Tform_b.transform.rotation.x  # Test this
+    quat[1] = a_Tform_b.transform.rotation.y  # Test this
+    quat[2] = a_Tform_b.transform.rotation.z  # Test this
+    quat[3] = a_Tform_b.transform.rotation.w  # Test this
+    return sp.SE3(
+        R.from_quat(quat).as_matrix(), trans
+    )  # R.from_quat() takes a quaternion in the form of [x, y, z, w]
+
+
+# Move to transform_utils.py
+def generate_spSE3_a_T_b_from_PoseStamped(a_Tform_b: PoseStamped) -> sp.SE3:
+    """Generate the transform from spotWorld to spot frame
+
+    Returns:
+        Transform: Transform from spotWorld to spot
+    """
+
+    trans = np.array([0.0, 0.0, 0.0])
+    trans[0] = a_Tform_b.pose.position.x  # Test this
+    trans[1] = a_Tform_b.pose.position.y  # Test this
+    trans[2] = a_Tform_b.pose.position.z  # Test this
+
+    quat = np.array([0.0, 0.0, 0.0, 1.0])
+    quat[0] = a_Tform_b.pose.orientation.x  # Test this
+    quat[1] = a_Tform_b.pose.orientation.y  # Test this
+    quat[2] = a_Tform_b.pose.orientation.z  # Test this
+    quat[3] = a_Tform_b.pose.orientation.w  # Test this
+    return sp.SE3(
+        R.from_quat(quat).as_matrix(), trans
+    )  # R.from_quat() takes a quaternion in the form of [x, y, z, w]
 
 
 class Spot:
@@ -862,6 +974,12 @@ class Spot:
 
         mn_transformation = mn.Matrix4.from_(rotation_matrix, translation)
         return mn_transformation
+
+    def get_vision_tform_body_PoseStamped(self, frame_tree_snapshot):
+        vision_tform_body = get_vision_tform_body(frame_tree_snapshot)
+        return generate_TransformStamped_a_T_b_from_SE3Pose(
+            a_Tform_b=vision_tform_body, parent_frame="spotWorld", child_frame="spot"
+        )
 
 
 class SpotLease:
