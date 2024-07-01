@@ -852,10 +852,10 @@ def main(
         best_object_frame_timestamp_ns[object_name] = outputs[
             "object_image_metadata_list"
         ][object_name][best_object_frame_idx[object_name]].capture_timestamp_ns
-        best_object_ariaWorld_T_device[
-            object_name
-        ] = vrs_mps_streamer.get_closest_ariaWorld_T_device_to_timestamp(
-            best_object_frame_timestamp_ns[object_name]
+        best_object_ariaWorld_T_device[object_name] = (
+            vrs_mps_streamer.get_closest_ariaWorld_T_device_to_timestamp(
+                best_object_frame_timestamp_ns[object_name]
+            )
         )
         best_object_img[object_name] = outputs["object_image_list"][object_name][
             best_object_frame_idx[object_name]
@@ -937,9 +937,11 @@ def main(
                     avg_ariaWorld_T_marker,
                     next_object_ariaWorld_T_cpf,
                 ],
-                rgb=best_object_img[next_object]
-                if best_object_img
-                else np.zeros((10, 10, 3), dtype=np.uint8),
+                rgb=(
+                    best_object_img[next_object]
+                    if best_object_img
+                    else np.zeros((10, 10, 3), dtype=np.uint8)
+                ),
                 traj_data=vrs_mps_streamer.xyz_trajectory,
                 block=True,
             )

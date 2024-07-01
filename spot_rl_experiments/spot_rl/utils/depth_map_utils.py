@@ -135,9 +135,9 @@ def fill_in_fast(
         top_pixel_values = depth_map[top_row_pixels, range(depth_map.shape[1])]
 
         for pixel_col_idx in range(depth_map.shape[1]):
-            depth_map[
-                0 : top_row_pixels[pixel_col_idx], pixel_col_idx
-            ] = top_pixel_values[pixel_col_idx]
+            depth_map[0 : top_row_pixels[pixel_col_idx], pixel_col_idx] = (
+                top_pixel_values[pixel_col_idx]
+            )
 
         # Large Fill
         empty_pixels = depth_map < 0.1
@@ -268,9 +268,9 @@ def fill_in_multiscale(
 
     for pixel_col_idx in range(s5_dilated_depths.shape[1]):
         if extrapolate:
-            s6_extended_depths[
-                0 : top_row_pixels[pixel_col_idx], pixel_col_idx
-            ] = top_pixel_values[pixel_col_idx]
+            s6_extended_depths[0 : top_row_pixels[pixel_col_idx], pixel_col_idx] = (
+                top_pixel_values[pixel_col_idx]
+            )
         else:
             # Create top mask
             top_mask[0 : top_row_pixels[pixel_col_idx], pixel_col_idx] = False
